@@ -7,7 +7,7 @@ AI destekli marka kimliği (brand design) çıkarma aracı.
 ## Kurulum
 
 ```bash
-uv tool install .
+pip install git+https://github.com/yaso09/ive.git
 ```
 
 ## Kullanım
