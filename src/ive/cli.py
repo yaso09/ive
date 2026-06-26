@@ -1,6 +1,7 @@
 import argparse
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,30 @@ def main():
     init_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
     init_parser.add_argument("--steps", default=None, help='Steps to run, e.g. "0-3", "0,2,5", "!3" (exclude), "!2,!4" (default: all)')
 
+    create_parser = subparsers.add_parser("create", help="Create a new project")
+    create_subparsers = create_parser.add_subparsers(dest="create_command")
+    create_video_parser = create_subparsers.add_parser("video", help="Create a new Remotion video project")
+    create_video_parser.add_argument("name", help="Video project name")
+    create_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
+    script_parser = create_subparsers.add_parser("script", help="Create a script file")
+    script_parser.add_argument("--to", required=True, help="Video name (e.g. my-video)")
+    script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
+    delete_parser = subparsers.add_parser("delete", help="Delete a resource")
+    delete_subparsers = delete_parser.add_subparsers(dest="delete_command")
+    delete_script_parser = delete_subparsers.add_parser("script", help="Delete a script file")
+    delete_script_parser.add_argument("--to", required=True, help="Video name (e.g. my-video)")
+    delete_script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+    delete_video_parser = delete_subparsers.add_parser("video", help="Delete an entire video project")
+    delete_video_parser.add_argument("path", help="Video name (e.g. my-video)")
+    delete_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
+    list_parser = subparsers.add_parser("list", help="List resources")
+    list_subparsers = list_parser.add_subparsers(dest="list_command")
+    list_video_parser = list_subparsers.add_parser("video", help="List video projects")
+    list_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -71,6 +96,19 @@ def main():
             model=args.model,
             steps=args.steps,
         )
+    elif args.command == "create":
+        if args.create_command == "video":
+            cmd_create_remotion_video(args.name, pathlib.Path(args.dir).resolve())
+        elif args.create_command == "script":
+            cmd_create_script(args.to, pathlib.Path(args.dir).resolve())
+    elif args.command == "delete":
+        if args.delete_command == "script":
+            cmd_delete_script(args.to, pathlib.Path(args.dir).resolve())
+        elif args.delete_command == "video":
+            cmd_delete_video(args.path, pathlib.Path(args.dir).resolve())
+    elif args.command == "list":
+        if args.list_command == "video":
+            cmd_list_video(pathlib.Path(args.dir).resolve())
 
 
 def parse_steps(spec: str | None) -> list[int]:
@@ -135,6 +173,71 @@ def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | N
             print(f"ive: [{idx}] done \u2014 {output}")
         else:
             print(f"ive: [{idx}] opencode completed but {step['output']} was not created", file=sys.stderr)
+
+
+def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
+    videos_dir = project_dir / ".brand" / "videos"
+    videos_dir.mkdir(parents=True, exist_ok=True)
+
+    cwd = os.getcwd()
+    try:
+        os.chdir(str(videos_dir))
+        result = subprocess.run(
+            f'npx create-video@latest --yes --blank --no-tailwind "{name}"',
+            shell=True,
+        )
+        if result.returncode != 0:
+            print("ive: failed to create Remotion video project", file=sys.stderr)
+            sys.exit(1)
+    finally:
+        os.chdir(cwd)
+
+    print(f"ive: done \u2014 {videos_dir / name}")
+
+
+def cmd_create_script(target: str, project_dir: pathlib.Path):
+    script_path = project_dir / ".brand" / "videos" / target / "script.md"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text("", encoding="utf-8")
+
+    print(f"ive: done \u2014 {script_path}")
+
+
+def cmd_list_video(project_dir: pathlib.Path):
+    videos_dir = project_dir / ".brand" / "videos"
+    if not videos_dir.exists():
+        return
+    names = sorted(
+        e.name for e in videos_dir.iterdir()
+        if e.is_dir() and not e.name.startswith(".")
+    )
+    if names:
+        for n in names:
+            script_path = videos_dir / n / "script.md"
+            has_script = "script.md" if script_path.exists() else ""
+            print(f"{n}  {has_script}")
+    else:
+        print("(no videos)")
+
+
+def cmd_delete_video(video_path: str, project_dir: pathlib.Path):
+    video_dir = project_dir / ".brand" / "videos" / video_path
+    if video_dir.exists() and video_dir.is_dir():
+        shutil.rmtree(video_dir)
+        print(f"ive: deleted \u2014 {video_dir}")
+    else:
+        print(f"ive: not found \u2014 {video_dir}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_delete_script(target: str, project_dir: pathlib.Path):
+    script_path = project_dir / ".brand" / "videos" / target / "script.md"
+    if script_path.exists():
+        script_path.unlink()
+        print(f"ive: deleted \u2014 {script_path}")
+    else:
+        print(f"ive: not found \u2014 {script_path}", file=sys.stderr)
+        sys.exit(1)
 
 
 def run_opencode(project_dir: pathlib.Path, prompt: str, message: str, agent: str | None = None, model: str | None = None):

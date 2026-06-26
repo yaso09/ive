@@ -1,6 +1,6 @@
 [project]
 name = "ive"
-version = "0.4.0"
+version = "0.5.0"
 description = "Brand design CLI tool — generates .brand/DESIGN.md via opencode"
 requires-python = ">=3.10"
 dependencies = []
