@@ -60,7 +60,7 @@ def main():
     init_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
     init_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
     init_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
-    init_parser.add_argument("--steps", default=None, help="Steps to run, e.g. 0-3 or 0,2,5 (default: all)")
+    init_parser.add_argument("--steps", default=None, help='Steps to run, e.g. "0-3", "0,2,5", "!3" (exclude), "!2,!4" (default: all)')
 
     args = parser.parse_args()
 
@@ -76,16 +76,21 @@ def main():
 def parse_steps(spec: str | None) -> list[int]:
     if spec is None:
         return list(range(len(STEPS)))
-    result = set()
+    include = set()
+    exclude = set()
     for part in spec.split(","):
         part = part.strip()
-        if "-" in part:
+        if part.startswith("!"):
+            exclude.add(int(part[1:]))
+        elif "-" in part:
             a, b = part.split("-", 1)
             for i in range(int(a.strip()), int(b.strip()) + 1):
-                result.add(i)
+                include.add(i)
         else:
-            result.add(int(part))
-    return sorted(result)
+            include.add(int(part))
+    if not include:
+        include = set(range(len(STEPS)))
+    return sorted(include - exclude)
 
 
 def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | None = None, steps: str | None = None):
