@@ -1,0 +1,18 @@
+[project]
+name = "ive"
+version = "0.1.0"
+description = "Brand design CLI tool — generates .brand/DESIGN.md via opencode"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+ive = "ive.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ive"]
+
+[tool.uv.sources]
