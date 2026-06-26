@@ -93,6 +93,14 @@ def main():
     check_parser = subparsers.add_parser("check", help="Check if init has been run")
     check_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
 
+    generate_parser = subparsers.add_parser("generate", help="Generate a video via opencode TUI")
+    generate_subparsers = generate_parser.add_subparsers(dest="generate_command")
+    generate_video_parser = generate_subparsers.add_parser("video", help="Generate a video from its script")
+    generate_video_parser.add_argument("name", help="Video name (e.g. my-video)")
+    generate_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+    generate_video_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
+    generate_video_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
+
     subparsers.add_parser("version", help="Show version")
 
     args = parser.parse_args()
@@ -117,6 +125,9 @@ def main():
     elif args.command == "list":
         if args.list_command == "video":
             cmd_list_video(pathlib.Path(args.dir).resolve())
+    elif args.command == "generate":
+        if args.generate_command == "video":
+            cmd_generate_video(args.name, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
     elif args.command == "check":
         cmd_check(pathlib.Path(args.dir).resolve())
     elif args.command == "version":
@@ -243,6 +254,28 @@ def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
         os.chdir(cwd)
 
     print(f"ive: done \u2014 {videos_dir / name}")
+
+
+def cmd_generate_video(name: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):
+    script_path = project_dir / ".brand" / "videos" / name / "script.md"
+    if not script_path.exists():
+        print(f"ive: script.md not found at {script_path}", file=sys.stderr)
+        sys.exit(1)
+
+    prompt = (
+        f"Generate the Remotion video project at `.brand/videos/{name}` "
+        f"based on the script in `.brand/videos/{name}/script.md`. "
+        f"Use the project context and brand design from `.brand/` as reference."
+    )
+
+    parts = ["opencode", str(project_dir), "--prompt", prompt]
+    if agent:
+        parts.extend(["--agent", agent])
+    if model:
+        parts.extend(["-m", model])
+
+    cmd = " ".join(f'"{p}"' if " " in p else p for p in parts)
+    subprocess.run(cmd, shell=True)
 
 
 def cmd_create_script(target: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):
