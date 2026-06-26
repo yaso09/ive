@@ -93,6 +93,12 @@ def main():
     check_parser = subparsers.add_parser("check", help="Check if init has been run")
     check_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
 
+    show_parser = subparsers.add_parser("show", help="Show a resource")
+    show_subparsers = show_parser.add_subparsers(dest="show_command")
+    show_script_parser = show_subparsers.add_parser("script", help="Show a video script")
+    show_script_parser.add_argument("--of", required=True, help="Video name (e.g. my-video)")
+    show_script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
     generate_parser = subparsers.add_parser("generate", help="Generate a video via opencode TUI")
     generate_subparsers = generate_parser.add_subparsers(dest="generate_command")
     generate_video_parser = generate_subparsers.add_parser("video", help="Generate a video from its script")
@@ -125,6 +131,9 @@ def main():
     elif args.command == "list":
         if args.list_command == "video":
             cmd_list_video(pathlib.Path(args.dir).resolve())
+    elif args.command == "show":
+        if args.show_command == "script":
+            cmd_show_script(args.of, pathlib.Path(args.dir).resolve())
     elif args.command == "generate":
         if args.generate_command == "video":
             cmd_generate_video(args.name, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
@@ -254,6 +263,14 @@ def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
         os.chdir(cwd)
 
     print(f"ive: done \u2014 {videos_dir / name}")
+
+
+def cmd_show_script(target: str, project_dir: pathlib.Path):
+    script_path = project_dir / ".brand" / "videos" / target / "script.md"
+    if not script_path.exists():
+        print(f"ive: script.md not found at {script_path}", file=sys.stderr)
+        sys.exit(1)
+    print(script_path.read_text(encoding="utf-8", errors="replace"))
 
 
 def cmd_generate_video(name: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):

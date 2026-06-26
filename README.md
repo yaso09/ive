@@ -59,6 +59,13 @@ ive: init incomplete — some steps are missing
 ive version                    # 0.6.0
 ```
 
+### `ive show`
+
+```bash
+ive show script --of my-video              # script.md içeriğini terminale yazdırır
+ive show script --of my-video --dir ../other-project
+```
+
 ### `ive create`
 
 ```bash
@@ -103,7 +110,8 @@ other-video
 
 | Flag | Komutlar | Açıklama |
 |------|----------|----------|
-| `--dir` | init, check, create, delete, list, generate | Proje dizini (varsayılan: `.`) |
+| `--dir` | init, check, show, create, delete, list, generate | Proje dizini (varsayılan: `.`) |
+| `--of` | show script | Video adı (örn. my-video) |
 | `--agent` | init, create script, generate video | Opencode agent adı |
 | `--model` | init, create script, generate video | Model adı (örn. `anthropic/claude-sonnet-4`) |
 | `--steps` | init | Adım filtresi (örn. `0-3`, `0,2,5`, `!3`) |
