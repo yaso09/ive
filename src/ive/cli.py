@@ -1,4 +1,5 @@
 import argparse
+import importlib.metadata
 import os
 import pathlib
 import shutil
@@ -72,6 +73,8 @@ def main():
     script_parser = create_subparsers.add_parser("script", help="Create a script file")
     script_parser.add_argument("--to", required=True, help="Video name (e.g. my-video)")
     script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+    script_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
+    script_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
 
     delete_parser = subparsers.add_parser("delete", help="Delete a resource")
     delete_subparsers = delete_parser.add_subparsers(dest="delete_command")
@@ -87,6 +90,11 @@ def main():
     list_video_parser = list_subparsers.add_parser("video", help="List video projects")
     list_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
 
+    check_parser = subparsers.add_parser("check", help="Check if init has been run")
+    check_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
+
+    subparsers.add_parser("version", help="Show version")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -100,7 +108,7 @@ def main():
         if args.create_command == "video":
             cmd_create_remotion_video(args.name, pathlib.Path(args.dir).resolve())
         elif args.create_command == "script":
-            cmd_create_script(args.to, pathlib.Path(args.dir).resolve())
+            cmd_create_script(args.to, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
     elif args.command == "delete":
         if args.delete_command == "script":
             cmd_delete_script(args.to, pathlib.Path(args.dir).resolve())
@@ -109,6 +117,10 @@ def main():
     elif args.command == "list":
         if args.list_command == "video":
             cmd_list_video(pathlib.Path(args.dir).resolve())
+    elif args.command == "check":
+        cmd_check(pathlib.Path(args.dir).resolve())
+    elif args.command == "version":
+        cmd_version()
 
 
 def parse_steps(spec: str | None) -> list[int]:
@@ -175,6 +187,44 @@ def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | N
             print(f"ive: [{idx}] opencode completed but {step['output']} was not created", file=sys.stderr)
 
 
+def cmd_version():
+    try:
+        ver = importlib.metadata.version("ive")
+    except importlib.metadata.PackageNotFoundError:
+        src = pathlib.Path(__file__).resolve().parent.parent.parent
+        pyproject = src / "pyproject.toml"
+        if pyproject.exists():
+            for line in pyproject.read_text(encoding="utf-8").splitlines():
+                if line.startswith("version = "):
+                    ver = line.split("=", 1)[1].strip().strip('"')
+                else:
+                    ver = "unknown"
+        else:
+            ver = "unknown"
+    print(ver)
+
+
+def cmd_check(project_dir: pathlib.Path):
+    brand_dir = project_dir / ".brand"
+    if not brand_dir.exists():
+        print("ive: init not run yet — .brand/ does not exist")
+        return
+
+    all_ok = True
+    for i, step in enumerate(STEPS):
+        out = project_dir / step["output"]
+        exists = out.exists()
+        status = "ok" if exists else "missing"
+        if not exists:
+            all_ok = False
+        print(f"  [{i}] {step['label']}: {status}")
+
+    if all_ok:
+        print("ive: init completed successfully")
+    else:
+        print("ive: init incomplete — some steps are missing")
+
+
 def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
     videos_dir = project_dir / ".brand" / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
@@ -183,7 +233,7 @@ def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
     try:
         os.chdir(str(videos_dir))
         result = subprocess.run(
-            f'npx create-video@latest --yes --blank --no-tailwind "{name}"',
+            f'npx -y create-video@latest --yes --blank --no-tailwind "{name}"',
             shell=True,
         )
         if result.returncode != 0:
@@ -195,12 +245,44 @@ def cmd_create_remotion_video(name: str, project_dir: pathlib.Path):
     print(f"ive: done \u2014 {videos_dir / name}")
 
 
-def cmd_create_script(target: str, project_dir: pathlib.Path):
+def cmd_create_script(target: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):
+    print("Script prompt (Ctrl+Z then Enter to finish):")
+    lines = []
+    try:
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
+    user_prompt = "\n".join(lines).strip()
+    if not user_prompt:
+        print("ive: no prompt provided, aborting", file=sys.stderr)
+        sys.exit(1)
+
+    prompt_dir = pathlib.Path(__file__).resolve().parent / "prompts"
+    template_path = prompt_dir / "script.md"
+    template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
+
+    context = gather_context(project_dir, include_brand=True)
+
+    final_prompt = (
+        f"{template}\n\n"
+        f"## Project Context\n\n"
+        f"{context}\n\n"
+        f"## User Request\n\n"
+        f"{user_prompt}\n\n"
+        f"Save the script to `.brand/videos/{target}/script.md`"
+    )
+
     script_path = project_dir / ".brand" / "videos" / target / "script.md"
     script_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path.write_text("", encoding="utf-8")
 
-    print(f"ive: done \u2014 {script_path}")
+    run_opencode(project_dir, final_prompt, f"Generate .brand/videos/{target}/script.md", agent=agent, model=model)
+
+    if script_path.exists():
+        print(f"ive: done \u2014 {script_path}")
+    else:
+        print("ive: opencode completed but script.md was not created", file=sys.stderr)
 
 
 def cmd_list_video(project_dir: pathlib.Path):
@@ -240,7 +322,12 @@ def cmd_delete_script(target: str, project_dir: pathlib.Path):
         sys.exit(1)
 
 
+def _clean(text: str) -> str:
+    return text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
+
+
 def run_opencode(project_dir: pathlib.Path, prompt: str, message: str, agent: str | None = None, model: str | None = None):
+    prompt = _clean(prompt)
     prompt_file = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
@@ -269,7 +356,7 @@ def run_opencode(project_dir: pathlib.Path, prompt: str, message: str, agent: st
             os.unlink(prompt_file)
 
 
-def gather_context(project_dir: pathlib.Path) -> str:
+def gather_context(project_dir: pathlib.Path, include_brand: bool = False) -> str:
     parts = []
 
     for pattern in ("README.md", "package.json", "pyproject.toml", "Cargo.toml", "composer.json"):
@@ -277,15 +364,26 @@ def gather_context(project_dir: pathlib.Path) -> str:
         if f.exists() and f.stat().st_size < 50000:
             parts.append(f"### `{pattern}`\n```\n{f.read_text(encoding='utf-8', errors='replace')[:3000]}\n```\n")
 
+    if include_brand:
+        brand_dir = project_dir / ".brand"
+        if brand_dir.exists():
+            parts.append("### `.brand/` contents\n")
+            for f in sorted(brand_dir.rglob("*")):
+                if f.is_file() and f.stat().st_size < 100000:
+                    rel = f.relative_to(project_dir)
+                    parts.append(f"**`{rel}`**\n```\n{f.read_text(encoding='utf-8', errors='replace')[:5000]}\n```\n")
+
     parts.append("### Project Files\n")
-    tree = get_file_tree(project_dir, max_depth=3)
+    tree = get_file_tree(project_dir, max_depth=3, include_brand=include_brand)
     parts.append(f"```\n{tree}\n```")
 
     return "\n".join(parts)
 
 
-def get_file_tree(project_dir: pathlib.Path, max_depth: int = 3) -> str:
-    ignore = {".git", "node_modules", "__pycache__", ".venv", ".brand", "target", ".next", "dist", "build"}
+def get_file_tree(project_dir: pathlib.Path, max_depth: int = 3, include_brand: bool = False) -> str:
+    ignore = {".git", "node_modules", "__pycache__", ".venv", "target", ".next", "dist", "build"}
+    if not include_brand:
+        ignore.add(".brand")
     lines = []
     project_dir = project_dir.resolve()
 
