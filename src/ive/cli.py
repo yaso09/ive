@@ -49,7 +49,14 @@ def main():
     parser = argparse.ArgumentParser(prog="ive")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = subparsers.add_parser("init", help="Initialize brand design for the project")
+    steps_desc = "\n".join(f"  {i}  {s['label']}" for i, s in enumerate(STEPS))
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize brand design for the project",
+        description="Run the brand extraction pipeline against the project.\n\n"
+        "Steps:\n" + steps_desc,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     init_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
     init_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
     init_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
