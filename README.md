@@ -26,18 +26,30 @@ ive init
 | `--dir` | Proje dizini (varsayılan: `.`) |
 | `--agent` | Kullanılacak opencode agent |
 | `--model` | Kullanılacak model (örn. `anthropic/claude-sonnet-4`) |
+| `--steps` | Çalıştırılacak adımlar (örn. `0-3`, `0,2,5`) |
 
 ```bash
 ive init --agent design-agent --model openai/gpt-4o
 ive init --dir ../baska-proje
+ive init --steps 0        # sadece DESIGN.md
+ive init --steps 0-2      # ilk 3 adım
+ive init --steps 0,4      # DESIGN.md + screenshot
 ```
 
 ## Nasıl çalışır
 
-1. `prompts/DESIGN.md` şablonunu okur
-2. Proje bağlamını toplar (README, package.json, dosya ağacı)
-3. Şablon + bağlam birleştirilmiş promptu opencode'a gönderir
-4. Opencode `.brand/DESIGN.md`'yi oluşturur
+`ive init` 6 adımlı bir pipeline çalıştırır:
+
+| Adım | Prompt | Çıktı |
+|------|--------|-------|
+| 0 | `DESIGN.md` | `.brand/DESIGN.md` — tasarım sistemi dokümanı |
+| 1 | `1.md` | `.brand/assets/` — statik medya dosyaları |
+| 2 | `2.md` | `.brand/elements/html/` — React komponent HTML'leri |
+| 3 | `3.md` | `.brand/elements/svg/` — komponent SVG'leri |
+| 4 | `4.md` | `.brand/screenshots/` — ekran görüntüleri |
+| 5 | `5.md` | `.brand/map.json` — tüm çıktıların haritası |
+
+Her adım sırayla opencode'a gönderilir. Bir önceki adımın çıktısı sonraki adımın girdisi olur.
 
 ## Prompt şablonunu özelleştirme
 
