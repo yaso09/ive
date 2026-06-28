@@ -86,6 +86,7 @@ ive generate video my-video --model anthropic/claude-sonnet-4
 ### `ive delete`
 
 ```bash
+ive delete                                 # tüm .brand/ klasörünü siler
 ive delete video my-video                  # video klasörünü siler
 ive delete script --to my-video            # script.md dosyasını siler
 ```

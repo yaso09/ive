@@ -77,7 +77,7 @@ def main():
     script_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
 
     delete_parser = subparsers.add_parser("delete", help="Delete a resource")
-    delete_subparsers = delete_parser.add_subparsers(dest="delete_command")
+    delete_subparsers = delete_parser.add_subparsers(dest="delete_command", required=False)
     delete_script_parser = delete_subparsers.add_parser("script", help="Delete a script file")
     delete_script_parser.add_argument("--to", required=True, help="Video name (e.g. my-video)")
     delete_script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
@@ -124,7 +124,9 @@ def main():
         elif args.create_command == "script":
             cmd_create_script(args.to, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
     elif args.command == "delete":
-        if args.delete_command == "script":
+        if args.delete_command is None:
+            cmd_delete_brand(pathlib.Path(".").resolve())
+        elif args.delete_command == "script":
             cmd_delete_script(args.to, pathlib.Path(args.dir).resolve())
         elif args.delete_command == "video":
             cmd_delete_video(args.path, pathlib.Path(args.dir).resolve())
@@ -350,6 +352,16 @@ def cmd_list_video(project_dir: pathlib.Path):
             print(f"{n}  {has_script}")
     else:
         print("(no videos)")
+
+
+def cmd_delete_brand(project_dir: pathlib.Path):
+    brand_dir = project_dir / ".brand"
+    if brand_dir.exists():
+        shutil.rmtree(brand_dir)
+        print(f"ive: deleted \u2014 {brand_dir}")
+    else:
+        print(f"ive: not found \u2014 {brand_dir}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_delete_video(video_path: str, project_dir: pathlib.Path):
