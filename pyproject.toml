@@ -1,9 +1,9 @@
 [project]
 name = "ive"
-version = "0.8.0"
+version = "0.10.0"
 description = "Brand design CLI tool — generates .brand/DESIGN.md via opencode"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["mistralai>=1.0.0"]
 
 [build-system]
 requires = ["hatchling"]

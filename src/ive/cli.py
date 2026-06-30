@@ -7,6 +7,9 @@ import subprocess
 import sys
 import tempfile
 
+from .config import save_api_key
+from .mistral_agent import run_mistral
+
 STEPS = [
     {
         "file": "DESIGN.md",
@@ -60,8 +63,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     init_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
-    init_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
-    init_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
+    init_parser.add_argument("--agent", default=None, help="Agent name (opencode) or ignored (mistral)")
+    init_parser.add_argument("--model", default=None, help="Model (default: mistral-large-latest, override via MISTRAL_MODEL)")
+    init_parser.add_argument("--opencode", action="store_true", help="Use opencode instead of Mistral")
     init_parser.add_argument("--steps", default=None, help='Steps to run, e.g. "0-3", "0,2,5", "!3" (exclude), "!2,!4" (default: all)')
 
     create_parser = subparsers.add_parser("create", help="Create a new project")
@@ -73,8 +77,9 @@ def main():
     script_parser = create_subparsers.add_parser("script", help="Create a script file")
     script_parser.add_argument("--to", required=True, help="Video name (e.g. my-video)")
     script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
-    script_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
-    script_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
+    script_parser.add_argument("--agent", default=None, help="Agent name (opencode) or ignored (mistral)")
+    script_parser.add_argument("--model", default=None, help="Model (default: mistral-large-latest)")
+    script_parser.add_argument("--opencode", action="store_true", help="Use opencode instead of Mistral")
 
     delete_parser = subparsers.add_parser("delete", help="Delete a resource")
     delete_subparsers = delete_parser.add_subparsers(dest="delete_command", required=False)
@@ -99,13 +104,22 @@ def main():
     show_script_parser.add_argument("--of", required=True, help="Video name (e.g. my-video)")
     show_script_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
 
-    generate_parser = subparsers.add_parser("generate", help="Generate a video via opencode TUI")
+    generate_parser = subparsers.add_parser("generate", help="Generate a video")
     generate_subparsers = generate_parser.add_subparsers(dest="generate_command")
     generate_video_parser = generate_subparsers.add_parser("video", help="Generate a video from its script")
     generate_video_parser.add_argument("name", help="Video name (e.g. my-video)")
     generate_video_parser.add_argument("--dir", default=".", help="Project directory (default: current dir)")
-    generate_video_parser.add_argument("--agent", default=None, help="Opencode agent to use (default: active agent)")
-    generate_video_parser.add_argument("--model", default=None, help="Model to use (e.g. anthropic/claude-sonnet-4)")
+    generate_video_parser.add_argument("--agent", default=None, help="Agent name (opencode) or ignored (mistral)")
+    generate_video_parser.add_argument("--model", default=None, help="Model (default: mistral-large-latest)")
+    generate_video_parser.add_argument("--opencode", action="store_true", help="Use opencode instead of Mistral")
+
+    auth_parser = subparsers.add_parser("auth", help="Authentication management")
+    auth_subparsers = auth_parser.add_subparsers(dest="auth_command")
+
+    login_parser = auth_subparsers.add_parser("login", help="Save API credentials")
+    login_subparsers = login_parser.add_subparsers(dest="login_provider")
+    login_mistral_parser = login_subparsers.add_parser("mistral", help="Save Mistral API key")
+    login_mistral_parser.add_argument("--key", help="Mistral API key (prompts if omitted)")
 
     subparsers.add_parser("version", help="Show version")
 
@@ -117,12 +131,13 @@ def main():
             agent=args.agent,
             model=args.model,
             steps=args.steps,
+            opencode=args.opencode,
         )
     elif args.command == "create":
         if args.create_command == "video":
             cmd_create_remotion_video(args.name, pathlib.Path(args.dir).resolve())
         elif args.create_command == "script":
-            cmd_create_script(args.to, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
+            cmd_create_script(args.to, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model, opencode=args.opencode)
     elif args.command == "delete":
         if args.delete_command is None:
             cmd_delete_brand(pathlib.Path(".").resolve())
@@ -138,9 +153,12 @@ def main():
             cmd_show_script(args.of, pathlib.Path(args.dir).resolve())
     elif args.command == "generate":
         if args.generate_command == "video":
-            cmd_generate_video(args.name, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model)
+            cmd_generate_video(args.name, pathlib.Path(args.dir).resolve(), agent=args.agent, model=args.model, opencode=args.opencode)
     elif args.command == "check":
         cmd_check(pathlib.Path(args.dir).resolve())
+    elif args.command == "auth":
+        if args.auth_command == "login" and args.login_provider == "mistral":
+            cmd_auth_login_mistral(args.key)
     elif args.command == "version":
         cmd_version()
 
@@ -165,7 +183,7 @@ def parse_steps(spec: str | None) -> list[int]:
     return sorted(include - exclude)
 
 
-def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | None = None, steps: str | None = None):
+def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | None = None, steps: str | None = None, opencode: bool = False):
     project_dir.joinpath(".brand").mkdir(exist_ok=True)
 
     prompt_dir = pathlib.Path(__file__).resolve().parent / "prompts"
@@ -200,13 +218,21 @@ def cmd_init(project_dir: pathlib.Path, agent: str | None = None, model: str | N
             )
 
         print(f"ive: [{idx}] {step['label']}...")
-        run_opencode(project_dir, prompt_text, step["msg"], agent=agent, model=model)
+        _run_agent(project_dir, prompt_text, step["msg"], agent=agent, model=model, opencode=opencode)
 
         output = project_dir / step["output"]
         if output.exists():
             print(f"ive: [{idx}] done \u2014 {output}")
         else:
-            print(f"ive: [{idx}] opencode completed but {step['output']} was not created", file=sys.stderr)
+            print(f"ive: [{idx}] agent completed but {step['output']} was not created", file=sys.stderr)
+
+
+def cmd_auth_login_mistral(key: str | None = None):
+    if not key:
+        import getpass
+        key = getpass.getpass("Mistral API key: ")
+    p = save_api_key(key)
+    print(f"ive: saved to {p}")
 
 
 def cmd_version():
@@ -275,7 +301,7 @@ def cmd_show_script(target: str, project_dir: pathlib.Path):
     print(script_path.read_text(encoding="utf-8", errors="replace"))
 
 
-def cmd_generate_video(name: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):
+def cmd_generate_video(name: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None, opencode: bool = False):
     script_path = project_dir / ".brand" / "videos" / name / "script.md"
     if not script_path.exists():
         print(f"ive: script.md not found at {script_path}", file=sys.stderr)
@@ -287,17 +313,10 @@ def cmd_generate_video(name: str, project_dir: pathlib.Path, agent: str | None =
         f"Use the project context and brand design from `.brand/` as reference."
     )
 
-    parts = ["opencode", str(project_dir), "--prompt", prompt]
-    if agent:
-        parts.extend(["--agent", agent])
-    if model:
-        parts.extend(["-m", model])
-
-    cmd = " ".join(f'"{p}"' if " " in p else p for p in parts)
-    subprocess.run(cmd, shell=True)
+    _run_agent(project_dir, prompt, f"Generate .brand/videos/{name}", agent=agent, model=model, opencode=opencode)
 
 
-def cmd_create_script(target: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None):
+def cmd_create_script(target: str, project_dir: pathlib.Path, agent: str | None = None, model: str | None = None, opencode: bool = False):
     print("Script prompt (Ctrl+Z then Enter to finish):")
     lines = []
     try:
@@ -329,12 +348,12 @@ def cmd_create_script(target: str, project_dir: pathlib.Path, agent: str | None 
     script_path = project_dir / ".brand" / "videos" / target / "script.md"
     script_path.parent.mkdir(parents=True, exist_ok=True)
 
-    run_opencode(project_dir, final_prompt, f"Generate .brand/videos/{target}/script.md", agent=agent, model=model)
+    _run_agent(project_dir, final_prompt, f"Generate .brand/videos/{target}/script.md", agent=agent, model=model, opencode=opencode)
 
     if script_path.exists():
         print(f"ive: done \u2014 {script_path}")
     else:
-        print("ive: opencode completed but script.md was not created", file=sys.stderr)
+        print("ive: agent completed but script.md was not created", file=sys.stderr)
 
 
 def cmd_list_video(project_dir: pathlib.Path):
@@ -382,6 +401,23 @@ def cmd_delete_script(target: str, project_dir: pathlib.Path):
     else:
         print(f"ive: not found \u2014 {script_path}", file=sys.stderr)
         sys.exit(1)
+
+
+
+
+
+def _run_agent(
+    project_dir: pathlib.Path,
+    prompt: str,
+    message: str,
+    agent: str | None = None,
+    model: str | None = None,
+    opencode: bool = False,
+):
+    if opencode:
+        run_opencode(project_dir, prompt, message, agent=agent, model=model)
+    else:
+        run_mistral(project_dir, prompt, message, agent=agent, model=model)
 
 
 def _clean(text: str) -> str:
